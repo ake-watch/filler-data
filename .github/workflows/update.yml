@@ -1,0 +1,42 @@
+name: Update filler dataset
+
+on:
+  schedule:
+    # Weekly. This data changes slowly (episode airs / classification edits),
+    # so a full ~1 hour scrape more often than this is not warranted.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+# Only one run at a time -- the scraper is a single-threaded, rate-limited
+# client against animefillerlist.com (Crawl-delay: 10) and must never race
+# itself.
+concurrency:
+  group: filler-data-update
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # Full scrape respects Crawl-delay: 10 across ~356 shows -> ~1 hour.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Full scrape (respects animefillerlist.com Crawl-delay: 10)
+        run: node scrape.js
+
+      - name: Commit filler.json if changed
+        run: |
+          if git diff --quiet -- filler.json; then
+            echo "No changes to filler.json"
+            exit 0
+          fi
+          git config user.name "ake-app"
+          git config user.email "312243255+ake-app@users.noreply.github.com"
+          git add filler.json
+          git commit -m "chore: weekly filler dataset refresh"
+          git push

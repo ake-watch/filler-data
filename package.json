@@ -1,0 +1,16 @@
+{
+  "name": "filler-data",
+  "version": "0.1.0",
+  "description": "Self-owned anime filler-episode dataset scraped from animefillerlist.com, keyed by AniList media ID.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "private": false,
+  "main": "filler.json",
+  "scripts": {
+    "scrape": "node scrape.js",
+    "scrape:limit": "node scrape.js --limit 15"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -8,7 +8,9 @@
   "main": "filler.json",
   "scripts": {
     "scrape": "node scrape.js",
-    "scrape:limit": "node scrape.js --limit 15"
+    "scrape:limit": "node scrape.js --limit 15",
+    "test": "node --test test/*.test.js",
+    "audit": "node audit.js"
   },
   "engines": {
     "node": ">=18"

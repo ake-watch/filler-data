@@ -224,10 +224,23 @@ export function pickCandidate(candidates, episodeCount, aflTitle = null) {
   return candidates[0];
 }
 
-export async function resolveAnilistId(title, cacheFile, episodeCount = null) {
+// A show page that lists more episodes than the AniList entry has is a
+// FRANCHISE page: animefillerlist numbers the whole run continuously
+// (Highschool DxD is 1-48 across four 12-episode seasons) while an AniList id
+// addresses one season. Episode numbers past the entry's length belong to
+// later seasons and can never match, so keying them here is meaningless --
+// and if the id were a later season they would be actively wrong. Keep only
+// what the entry can actually contain.
+export function trimToEntry(filler, entryEpisodes) {
+  if (!entryEpisodes) return { kept: filler, dropped: 0 };
+  const kept = filler.filter((n) => n <= entryEpisodes);
+  return { kept, dropped: filler.length - kept.length };
+}
+
+export async function resolveAnilistMedia(title, cacheFile, episodeCount = null) {
   if (existsSync(cacheFile)) {
     const cached = JSON.parse(await readFile(cacheFile, 'utf8'));
-    return cached.id;
+    return cached.id ? { id: cached.id, episodes: cached.matchedEpisodes ?? null } : null;
   }
   // Search the FULL title first. The trailing parenthetical is usually the
   // disambiguator ("Hunter x Hunter (2011)"), so discarding it up front is
@@ -249,7 +262,12 @@ export async function resolveAnilistId(title, cacheFile, episodeCount = null) {
     JSON.stringify({ id, title, matchedEpisodes: chosen?.episodes ?? null, pageEpisodes: episodeCount }),
     'utf8'
   );
-  return id;
+  return id ? { id, episodes: chosen?.episodes ?? null } : null;
+}
+
+export async function resolveAnilistId(title, cacheFile, episodeCount = null) {
+  const media = await resolveAnilistMedia(title, cacheFile, episodeCount);
+  return media?.id ?? null;
 }
 
 // --- Main -----------------------------------------------------------------
@@ -268,6 +286,7 @@ async function main() {
   const result = {};
   const seenBy = {};
   const collisions = [];
+  const trimmed = [];
   let processed = 0;
   for (const show of shows) {
     processed += 1;
@@ -296,9 +315,22 @@ async function main() {
 
     const episodeCount = countEpisodeRows(html);
     const anilistCacheFile = slugToCacheFile(ANILIST_CACHE_DIR, show.slug, 'json');
-    const anilistId = await resolveAnilistId(show.title, anilistCacheFile, episodeCount);
-    if (!anilistId) {
+    const media = await resolveAnilistMedia(show.title, anilistCacheFile, episodeCount);
+    if (!media) {
       console.log(`  [${processed}/${shows.length}] ${show.title}: no AniList match, skipping`);
+      continue;
+    }
+    const anilistId = media.id;
+
+    const { kept, dropped } = trimToEntry(filler, media.episodes);
+    if (dropped > 0) {
+      trimmed.push({ title: show.title, id: anilistId, dropped, entryEpisodes: media.episodes, pageEpisodes: episodeCount });
+    }
+    if (kept.length === 0) {
+      console.log(
+        `  [${processed}/${shows.length}] ${show.title}: all ${filler.length} filler ep(s) fall outside ` +
+          `AniList ${anilistId} (${media.episodes} eps) -- franchise numbering, skipping`
+      );
       continue;
     }
 
@@ -314,15 +346,26 @@ async function main() {
       continue;
     }
 
-    result[key] = filler;
+    result[key] = kept;
     seenBy[key] = show.title;
     console.log(
-      `  [${processed}/${shows.length}] ${show.title} -> AniList ${anilistId}: ${filler.length} filler eps`
+      `  [${processed}/${shows.length}] ${show.title} -> AniList ${anilistId}: ${kept.length} filler eps` +
+        (dropped > 0 ? ` (dropped ${dropped} past ep ${media.episodes})` : '')
     );
   }
 
   await writeFile(OUTPUT_PATH, JSON.stringify(result), 'utf8');
   console.log(`Wrote ${Object.keys(result).length} entries to ${OUTPUT_PATH}`);
+  if (trimmed.length) {
+    const total = trimmed.reduce((n, t) => n + t.dropped, 0);
+    console.log(
+      `\n${trimmed.length} franchise page(s), ${total} episode number(s) dropped as out of range:`
+    );
+    for (const t of trimmed.slice(0, 15)) {
+      console.log(`  ${t.title}: dropped ${t.dropped} (entry has ${t.entryEpisodes} eps, page lists ${t.pageEpisodes})`);
+    }
+    if (trimmed.length > 15) console.log(`  ... and ${trimmed.length - 15} more`);
+  }
   if (collisions.length) {
     console.log(`\n${collisions.length} AniList id collision(s) -- these need a look:`);
     for (const c of collisions) {

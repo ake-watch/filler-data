@@ -7,7 +7,7 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { pickCandidate, countEpisodeRows, ALTERNATE_LIST_SLUG } from '../scrape.js'
+import { pickCandidate, countEpisodeRows, ALTERNATE_LIST_SLUG, trimToEntry } from '../scrape.js'
 
 const media = (id, romaji, episodes, english = null) => ({
   id, episodes, title: { romaji, english }, startDate: { year: null }
@@ -81,6 +81,33 @@ describe('countEpisodeRows', () => {
 
   test('is zero for a page with no episode table', () => {
     assert.equal(countEpisodeRows('<html><body>nothing</body></html>'), 0)
+  })
+})
+
+describe('trimToEntry', () => {
+  test('drops episode numbers the AniList entry cannot contain', () => {
+    // Observed: the Highschool DxD page numbers 1-48 across four 12-episode
+    // seasons and marks 34-36 as filler. Keyed to any single season, none of
+    // those episodes exist -- the incumbent dataset ships exactly this.
+    assert.deepEqual(trimToEntry([34, 35, 36], 12), { kept: [], dropped: 3 })
+  })
+
+  test('keeps everything when the page and the entry agree', () => {
+    assert.deepEqual(trimToEntry([2, 7, 18], 26), { kept: [2, 7, 18], dropped: 0 })
+  })
+
+  test('keeps the in-range prefix of a franchise page', () => {
+    assert.deepEqual(trimToEntry([3, 9, 40, 55], 12), { kept: [3, 9], dropped: 2 })
+  })
+
+  test('is a no-op when the entry episode count is unknown', () => {
+    // AniList reports null episodes for still-airing shows; trimming on a
+    // guess would silently delete real filler.
+    assert.deepEqual(trimToEntry([1, 2, 999], null), { kept: [1, 2, 999], dropped: 0 })
+  })
+
+  test('boundary: an episode equal to the entry length is kept', () => {
+    assert.deepEqual(trimToEntry([12], 12), { kept: [12], dropped: 0 })
   })
 })
 

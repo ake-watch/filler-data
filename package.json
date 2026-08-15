@@ -10,7 +10,8 @@
     "scrape": "node scrape.js",
     "scrape:limit": "node scrape.js --limit 15",
     "test": "node --test test/*.test.js",
-    "audit": "node audit.js"
+    "audit": "node audit.js",
+    "films": "node films.js"
   },
   "engines": {
     "node": ">=18"

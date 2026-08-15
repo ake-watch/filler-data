@@ -128,6 +128,71 @@ export function countEpisodeRows(html) {
 // different anime. They resolve to the same AniList id as the canonical page.
 export const ALTERNATE_LIST_SLUG = /-(definitive-filler-list|manga-canon)$/;
 
+// --- Collection pages (films / OVAs / specials) ---------------------------
+//
+// "One Piece Films" is not a show whose episodes are numbered 1..n -- each row
+// is a separate work with its own AniList entry. The dataset we replace stores
+// each as its own id with the value [1], meaning the whole film is filler.
+// These pages therefore need a different pass: resolve per ROW, not per PAGE.
+
+export const COLLECTION_H1 = /\s+(Films?|Movies?|OVAs?|OADs?|Specials?)$/i;
+
+export function collectionFranchise(html) {
+  const m = /<h1>([^<]*)<\/h1>/.exec(html);
+  if (!m) return null;
+  const name = m[1].replace(/\s*Filler List\s*$/i, '').trim();
+  return COLLECTION_H1.test(name) ? name.replace(COLLECTION_H1, '').trim() : null;
+}
+
+export function parseCollectionPage(html) {
+  const franchise = collectionFranchise(html);
+  if (franchise === null) return null;
+  const rowRe =
+    /<tr class="([^"]+)" id="eps-(\d+)"><td class="Number">\d+<\/td><td class="Title"><a href="\/shows\/[^/"]+\/([^"]+)"[^>]*>([^<]*)<\/a>/g;
+  const rows = [];
+  let m;
+  while ((m = rowRe.exec(html))) {
+    rows.push({
+      episode: parseInt(m[2], 10),
+      filmSlug: decodeURIComponent(m[3]),
+      title: m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim(),
+      filler: m[1].startsWith('filler'),
+    });
+  }
+  return { franchise, rows };
+}
+
+// A film's own title is often already qualified ("One Piece: The Movie") but
+// just as often is not ("Clockwork Island Adventure"), and searching the bare
+// form matches something unrelated. Prefix the franchise only when the title
+// does not already carry it.
+export function filmSearchKey(franchise, title) {
+  const flat = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const f = flat(franchise);
+  const t = flat(title);
+  if (!f) return title;
+  return t.includes(f) ? title : `${franchise} ${title}`;
+}
+
+// Films must not match a TV series. Restricting the format is what stops
+// "Dragon Ball Films / Curse of the Blood Rubies" resolving to Dragon Ball.
+export const FILM_FORMATS = new Set(['MOVIE', 'OVA', 'SPECIAL', 'ONA']);
+
+// Deliberately stricter than the series matcher: a wrong film match writes a
+// [1] onto an unrelated work, and there is no episode count to catch it.
+export function pickFilmCandidate(candidates, searchKey) {
+  const flat = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const want = flat(searchKey);
+  const eligible = candidates.filter((m) => FILM_FORMATS.has(m.format));
+  if (eligible.length === 0) return null;
+  const exact = eligible.filter(
+    (m) => flat(m.title?.romaji) === want || flat(m.title?.english) === want
+  );
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null; // ambiguous -- omit rather than guess
+  return null; // no exact match: omission is benign, a wrong match is not
+}
+
 // --- AniList resolution ---------------------------------------------------
 
 // Ask for several candidates rather than AniList's single best guess: its

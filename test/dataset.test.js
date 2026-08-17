@@ -24,6 +24,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { FRANCHISE_SEASONS, mapFranchiseFiller } from '../seasons.js'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DATASET = path.join(root, 'filler.json')
@@ -88,6 +89,7 @@ describe('parity against the incumbent dataset (release gate)', () => {
   const haveOracle = existsSync(ORACLE)
   const oracle = haveOracle ? read(ORACLE) : {}
   const norm = v => [...new Set(v)].sort((a, b) => a - b)
+  const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
 
   // AniList episode counts, recorded by the scraper at resolution time so this
   // stays hermetic -- no network, and no dependence on AniList staying up.
@@ -109,23 +111,34 @@ describe('parity against the incumbent dataset (release gate)', () => {
   // Shows the incumbent covers and we do not. Absence is benign -- no key means
   // nothing is marked, so a consumer's skip feature simply does nothing -- but
   // it is not open-ended: nothing may join this list without a reason, and the
-  // list may only shrink. Two reasons, and no others:
+  // list may only shrink. Four reasons, and no others:
   //
-  //   franchise numbering -- animefillerlist numbers a franchise continuously
-  //   while the id resolves to season 1, so every filler number falls past that
-  //   entry's length and trimToEntry empties it. Covering these needs a
-  //   per-season id map the scraper has no concept of.
+  //   no filler in that season -- seasons.js now splits the franchise page per
+  //   season, and the incumbent's key is a season that holds no filler once the
+  //   continuous numbers are resolved. The filler is in this dataset, under the
+  //   season ids that actually contain it.
+  //
+  //   boundaries unpinned -- the franchise's AniList season episode counts do
+  //   not sum to the page's episode row count, so no boundary can be placed
+  //   without guessing, and guessing here makes a consumer skip canon.
+  //
+  //   held -- mappable, but the mapping contradicts the incumbent on an id it
+  //   already claims, which registers as an over-mark in the differential
+  //   audit. Needs human sign-off, not an agent's judgement. See seasons.js.
+  //
+  //   different id -- animefillerlist's page does resolve, just not to the id
+  //   the incumbent chose, and ours is the better fit.
   //
   //   no source row -- nothing on animefillerlist produces the id at all, so
   //   there is nothing to resolve from and no amount of matcher work reaches it.
   const KNOWN_UNCOVERED = {
-    384: 'franchise numbering (Gantz)',
-    6033: 'franchise numbering (Dragon Ball Z Kai)',
-    14829: 'franchise numbering (Fate/kaleid liner Prisma Illya)',
-    20745: 'franchise numbering (High School DxD BorN)',
-    20776: 'franchise numbering (Ghost in the Shell: Arise Specials)',
-    20789: 'franchise numbering (Nanatsu no Taizai)',
-    21459: 'franchise numbering (My Hero Academia)',
+    384: 'no filler in that season (Gantz; eps 22-26 are on 395, GANTZ 2)',
+    6033: 'boundaries unpinned (Dragon Ball Z Kai; 97+69 seasons vs 167 page rows)',
+    14829: 'boundaries unpinned (Prisma Illya; 10+10+10+12 seasons vs 43 page rows)',
+    20745: 'held (High School DxD BorN; correct mapping is BorN 10-12, incumbent says 34-36)',
+    20776: 'different id (Ghost in the Shell: Arise; we key 21056, the 10-episode entry the page matches)',
+    20789: 'no filler in that season (Nanatsu no Taizai; eps 25-28 are on 21385, Seisen no Shirushi)',
+    21459: 'no filler in that season (My Hero Academia; eps 39/58/64/104 are on 100166, 104276, 117193)',
     166456: 'no source row (Celestial Bonds)',
   }
 
@@ -177,6 +190,42 @@ describe('parity against the incumbent dataset (release gate)', () => {
     }
     assert.deepEqual(unexplained, [],
       `${unexplained.length} disagreement(s) not accounted for by out-of-range trimming`)
+  })
+
+  test('every mappable franchise is actually in the dataset, per season', { skip: !haveOracle }, () => {
+    // The incumbent keys a franchise page's continuous numbers to its first
+    // season, so its own entry is the input the map is supposed to split. Round
+    // it back through the map and require the result to be present verbatim --
+    // this is what fails if the scraper stops applying the map at all.
+    const gaps = []
+    for (const [slug, e] of Object.entries(FRANCHISE_SEASONS)) {
+      if (e.hold) continue
+      const root = String(e.seasons[0].id)
+      if (!(root in oracle)) continue
+      const mapped = mapFranchiseFiller(slug, norm(oracle[root]), e.pageEpisodes)
+      assert.ok(mapped, `${slug}: the incumbent's numbers no longer map`)
+      for (const [id, eps] of mapped) {
+        const have = dataset[String(id)]
+        if (!have) { gaps.push(`${slug}: id ${id} missing from the dataset`); continue }
+        if (!eq(norm(have), eps)) gaps.push(`${slug}: id ${id} is ${have.join(',')}, expected ${eps.join(',')}`)
+      }
+    }
+    assert.deepEqual(gaps, [], `${gaps.length} franchise season(s) not carried into the dataset`)
+  })
+
+  test('no season-mapped entry marks an episode past that season', () => {
+    // The franchise map writes ids the scraper never resolved, so .cache/anilist
+    // has no episode count for them and the check below cannot see them.
+    const offenders = []
+    for (const e of Object.values(FRANCHISE_SEASONS)) {
+      for (const s of e.seasons) {
+        const marks = dataset[String(s.id)]
+        if (!marks) continue
+        const over = marks.filter(n => n < 1 || n > s.episodes)
+        if (over.length) offenders.push(`id ${s.id}: season has ${s.episodes} eps, marks ${over.join(',')}`)
+      }
+    }
+    assert.deepEqual(offenders, [], `${offenders.length} season-mapped entry/entries out of range`)
   })
 
   test('no entry marks an episode its AniList entry does not have', () => {

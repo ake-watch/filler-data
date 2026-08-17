@@ -15,6 +15,7 @@
 // restart from zero.
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mapFranchiseFiller } from './seasons.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -452,6 +453,27 @@ async function main() {
     }
 
     const episodeCount = countEpisodeRows(html);
+
+    // A franchise page numbers seasons continuously, so split it per season instead of resolving one id.
+    const seasonMap = mapFranchiseFiller(show.slug, filler, episodeCount);
+    if (seasonMap) {
+      const written = [];
+      for (const [id, eps] of seasonMap) {
+        const key = String(id);
+        if (key in result) {
+          collisions.push({ id: key, kept: seenBy[key], dropped: show.title });
+          continue;
+        }
+        result[key] = eps;
+        seenBy[key] = show.title;
+        written.push(`${key}:${eps.length}`);
+      }
+      console.log(
+        `  [${processed}/${shows.length}] ${show.title}: franchise map -> ${written.join(' ') || 'nothing (all ids claimed)'}`
+      );
+      continue;
+    }
+
     const anilistCacheFile = slugToCacheFile(ANILIST_CACHE_DIR, show.slug, 'json');
     const media = await resolveAnilistMedia(show.title, anilistCacheFile, episodeCount);
     if (!media) {

@@ -174,6 +174,17 @@ export function filmSearchKey(franchise, title) {
   return t.includes(f) ? title : `${franchise} ${title}`;
 }
 
+// AniList's fuzzy search returns nothing at all for some franchise-prefixed
+// keys ("Hunter x Hunter (2011) Phantom Rouge"). The bare row title is a second
+// query to try, never a looser rule: whatever it returns is still graded
+// against the franchise-qualified key.
+export function filmSearchTerms(franchise, title) {
+  const terms = [filmSearchKey(franchise, title)];
+  const bare = (title || '').trim();
+  if (bare && bare !== terms[0]) terms.push(bare);
+  return terms;
+}
+
 // Films must not match a TV series. Restricting the format is what stops
 // "Dragon Ball Films / Curse of the Blood Rubies" resolving to Dragon Ball.
 export const FILM_FORMATS = new Set(['MOVIE', 'OVA', 'SPECIAL', 'ONA']);

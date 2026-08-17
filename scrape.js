@@ -189,19 +189,81 @@ export function filmSearchTerms(franchise, title) {
 // "Dragon Ball Films / Curse of the Blood Rubies" resolving to Dragon Ball.
 export const FILM_FORMATS = new Set(['MOVIE', 'OVA', 'SPECIAL', 'ONA']);
 
+// Words AniList inserts that the source title lacks ("Bleach the Movie: The
+// DiamondDust Rebellion" vs "Bleach The DiamondDust Rebellion"). Dropped from
+// both sides before comparing, so they can never decide a match either way.
+const FILM_QUALIFIER_TOKENS = new Set(['the', 'movie', 'movies', 'film', 'gekijouban']);
+
+// How much extra title the AniList entry may carry past the source title
+// ("... Thanksgiving" vs "... Thanksgiving Festa"). Two tokens covers every
+// qualifier observed; more than that stops being the same name.
+const FILM_MAX_EXTRA_TOKENS = 2;
+
+function filmFlat(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[\u00d7\u2715\u2716]/g, ' x ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function filmTokens(s) {
+  return filmFlat(s).split(' ').filter((t) => t && !FILM_QUALIFIER_TOKENS.has(t));
+}
+
+function dropPrefix(tokens, prefix) {
+  if (prefix.length === 0 || prefix.length >= tokens.length) return tokens;
+  return prefix.every((t, i) => tokens[i] === t) ? tokens.slice(prefix.length) : tokens;
+}
+
+// True when `want` appears in `have` in order, with at most FILM_MAX_EXTRA
+// tokens of padding. One-directional by construction: every wanted token has
+// to be found, so a title shorter than the source row can never satisfy it.
+function coversInOrder(have, want) {
+  if (want.length === 0) return false;
+  if (have.length - want.length > FILM_MAX_EXTRA_TOKENS) return false;
+  let i = 0;
+  for (const t of have) if (i < want.length && t === want[i]) i += 1;
+  return i === want.length;
+}
+
 // Deliberately stricter than the series matcher: a wrong film match writes a
 // [1] onto an unrelated work, and there is no episode count to catch it.
-export function pickFilmCandidate(candidates, searchKey) {
-  const flat = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const want = flat(searchKey);
+//
+// Two rungs, in order. Exact equality against any of the entry's titles wins
+// outright. Failing that, and only when the franchise is known, compare the
+// bare titles -- qualifier words removed and the franchise prefix removed from
+// both sides -- and additionally require the entry to carry the franchise name
+// on its own. That second condition is what keeps a bare-title query honest:
+// searching "Kids" returns "Vampiyan Kids", whose title contains no Fullmetal
+// Alchemist, so it is rejected. Either rung omits when two entries match.
+export function pickFilmCandidate(candidates, searchKey, franchise = null) {
   const eligible = candidates.filter((m) => FILM_FORMATS.has(m.format));
   if (eligible.length === 0) return null;
-  const exact = eligible.filter(
-    (m) => flat(m.title?.romaji) === want || flat(m.title?.english) === want
-  );
+  const titlesOf = (m) =>
+    [m.title?.romaji, m.title?.english, ...(m.synonyms ?? [])].filter(Boolean);
+
+  const want = filmFlat(searchKey);
+  const exact = eligible.filter((m) => titlesOf(m).some((t) => filmFlat(t) === want));
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) return null; // ambiguous -- omit rather than guess
-  return null; // no exact match: omission is benign, a wrong match is not
+
+  if (!franchise) return null;
+  const franchiseName = franchise.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const franchiseFlat = filmFlat(franchiseName);
+  if (!franchiseFlat) return null;
+  const franchiseTokens = filmTokens(franchiseName);
+  // A parenthetical disambiguates a series ("Hunter x Hunter (2011)"); no film
+  // title carries it, so it can only ever block a match.
+  const bare = dropPrefix(filmTokens(searchKey.replace(/\s*\([^)]*\)\s*/g, ' ')), franchiseTokens);
+  if (bare.length === 0) return null;
+
+  const near = eligible.filter(
+    (m) =>
+      titlesOf(m).some((t) => filmFlat(t).includes(franchiseFlat)) &&
+      titlesOf(m).some((t) => coversInOrder(dropPrefix(filmTokens(t), franchiseTokens), bare))
+  );
+  return near.length === 1 ? near[0] : null;
 }
 
 // --- AniList resolution ---------------------------------------------------

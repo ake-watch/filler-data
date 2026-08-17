@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  parseCollectionPage, filmSearchKey, pickFilmCandidate,
+  parseCollectionPage, filmSearchKey, filmSearchTerms, pickFilmCandidate,
   slugToCacheFile, ANILIST_CACHE_DIR,
 } from './scrape.js';
 
@@ -42,6 +42,7 @@ const QUERY = `query ($search: String) {
       format
       episodes
       title { romaji english }
+      synonyms
     }
   }
 }`;
@@ -68,20 +69,36 @@ async function search(term) {
   return { error: null, media: json?.data?.Page?.media ?? [] };
 }
 
-async function resolveFilm(searchKey, cacheFile) {
+// Try each search term in turn. A later term only widens what AniList is asked
+// for; the pick is still graded against the franchise-qualified key, so a
+// broader query cannot buy a looser match.
+async function resolveFilm(film, cacheFile) {
   if (existsSync(cacheFile)) {
     const c = JSON.parse(readFileSync(cacheFile, 'utf8'));
-    return { id: c.id, cached: true, error: c.error ?? null };
+    return { id: c.id, cached: true, error: c.error ?? null, term: c.term ?? null };
   }
-  const { error, media } = await search(searchKey);
-  if (error) return { id: null, cached: false, error };
-  const chosen = pickFilmCandidate(media, searchKey);
-  writeFileSync(
-    cacheFile,
-    JSON.stringify({ id: chosen?.id ?? null, searchKey, format: chosen?.format ?? null, candidates: media.length }),
-    'utf8'
-  );
-  return { id: chosen?.id ?? null, cached: false, error: null };
+  const terms = filmSearchTerms(film.franchise, film.title);
+  const tried = {};
+  for (const term of terms) {
+    const { error, media } = await search(term);
+    if (error) return { id: null, cached: false, error };
+    tried[term] = media;
+    const chosen = pickFilmCandidate(media, film.searchKey, film.franchise);
+    if (chosen || term === terms[terms.length - 1]) {
+      // Cache the candidate lists, not just the verdict: re-scoring a matcher
+      // change is then free instead of another pass over the API.
+      writeFileSync(
+        cacheFile,
+        JSON.stringify({
+          id: chosen?.id ?? null, searchKey: film.searchKey, franchise: film.franchise,
+          term: chosen ? term : null, format: chosen?.format ?? null, tried,
+        }),
+        'utf8'
+      );
+      return { id: chosen?.id ?? null, cached: false, error: null, term: chosen ? term : null };
+    }
+  }
+  return { id: null, cached: false, error: null, term: null };
 }
 
 const films = [];
@@ -97,19 +114,26 @@ for (const f of readdirSync(SHOWS).filter((x) => x.endsWith('.html'))) {
 console.log(`${films.length} filler film(s)/OVA(s) across the collection pages.`);
 
 const result = {};
+const claimedBy = {};
+const shared = [];
 let resolved = 0;
 let unresolved = 0;
 let apiDown = false;
 
 for (const film of films) {
   const cacheFile = slugToCacheFile(ANILIST_CACHE_DIR, `film-${film.filmSlug}`, 'json');
-  const { id, error } = await resolveFilm(film.searchKey, cacheFile);
+  const { id, error } = await resolveFilm(film, cacheFile);
   if (error) {
     apiDown = true;
     console.log(`  AniList unavailable (HTTP ${error}) -- stopping`);
     break;
   }
   if (id) {
+    // Two rows on one id is either a duplicate listing or a mis-resolution.
+    // The written value is [1] either way, so nothing is lost, but it is the
+    // shape a bad match takes and it has to be visible.
+    if (claimedBy[id]) shared.push({ id, first: claimedBy[id], second: film.searchKey });
+    else claimedBy[id] = film.searchKey;
     result[String(id)] = [1];
     resolved += 1;
   } else {
@@ -124,7 +148,11 @@ if (apiDown) {
 }
 
 writeFileSync(OUT, JSON.stringify(result), 'utf8');
-console.log(`\nresolved ${resolved}, omitted ${unresolved} -> ${OUT}`);
+console.log(`\nresolved ${resolved} row(s) onto ${Object.keys(result).length} id(s), omitted ${unresolved} -> ${OUT}`);
+if (shared.length) {
+  console.log(`\n${shared.length} id(s) claimed by more than one row -- check each:`);
+  for (const s of shared) console.log(`  id ${s.id}: "${s.first}" and "${s.second}"`);
+}
 
 // Validation: the dataset we replace already carries film entries. Reproducing
 // them is the evidence that this matcher works; anything it invents that the

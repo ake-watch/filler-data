@@ -14,7 +14,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
-  collectionFranchise, parseCollectionPage, filmSearchKey,
+  collectionFranchise, parseCollectionPage, filmSearchKey, filmSearchTerms,
   pickFilmCandidate, FILM_FORMATS, COLLECTION_H1
 } from '../scrape.js'
 
@@ -121,5 +121,80 @@ describe('pickFilmCandidate', () => {
 
   test('the permitted formats are exactly the non-series ones', () => {
     assert.deepEqual([...FILM_FORMATS].sort(), ['MOVIE', 'ONA', 'OVA', 'SPECIAL'])
+  })
+})
+
+describe('pickFilmCandidate, relaxed rung', () => {
+  const syn = (id, romaji, format, english, synonyms = []) =>
+    ({ id, format, title: { romaji, english }, synonyms })
+
+  test('a qualifier AniList inserts does not break the match', () => {
+    // Observed: every unresolved film failed this way. AniList writes
+    // "<series> the Movie: <title>", animefillerlist writes "<series> <title>".
+    const c = [syn(2889, 'BLEACH: The DiamondDust Rebellion', 'MOVIE', 'Bleach the Movie: The DiamondDust Rebellion')]
+    assert.equal(pickFilmCandidate(c, 'Bleach The DiamondDust Rebellion', 'Bleach').id, 2889)
+  })
+
+  test('matches on a synonym when romaji and english both differ', () => {
+    // Observed: AniList's english title for this one is null.
+    const c = [syn(761, 'NARUTO: Akaki Yotsuba no Clover wo Sagase', 'SPECIAL', null,
+      ['Naruto: Find the Crimson Four-leaf Clover!'])]
+    assert.equal(pickFilmCandidate(c, 'Naruto Find the Crimson Four-Leaf Clover!', 'Naruto').id, 761)
+  })
+
+  test('tolerates two extra tokens in the AniList title but not three', () => {
+    const two = [syn(1, 'Franchise: Alpha Beta Gamma Delta', 'MOVIE', null)]
+    assert.equal(pickFilmCandidate(two, 'Franchise Gamma Delta', 'Franchise').id, 1)
+    const three = [syn(1, 'Franchise: Alpha Beta Epsilon Gamma Delta', 'MOVIE', null)]
+    assert.equal(pickFilmCandidate(three, 'Franchise Gamma Delta', 'Franchise'), null)
+  })
+
+  test('never accepts a shorter title than the one we asked for', () => {
+    // The relaxation is one-directional: the entry may say more than the
+    // source row, never less, or "Broly" would take "Broly: Second Coming".
+    const c = [syn(1, 'Franchise: Broly', 'MOVIE', null)]
+    assert.equal(pickFilmCandidate(c, 'Franchise Broly Second Coming', 'Franchise'), null)
+  })
+
+  test('rejects a candidate that does not carry the franchise itself', () => {
+    // Observed: searching the bare row title "Kids" returns "Vampiyan Kids",
+    // which the token rule alone would accept. Requiring the entry to name the
+    // franchise on its own is what makes a bare-title query safe.
+    const c = [syn(3290, 'Vampiyan Kids', 'TV', null), syn(3291, 'Vampiyan Kids OVA', 'OVA', null)]
+    assert.equal(pickFilmCandidate(c, 'Fullmetal Alchemist Kids', 'Fullmetal Alchemist'), null)
+  })
+
+  test('omits when the relaxed rule matches two entries', () => {
+    // Observed: "Naruto Shippuden" covers the Shippuden movie AND each of its
+    // titled sequels. Ambiguous means omit, exactly as on the exact rung.
+    const c = [
+      syn(2472, 'NARUTO: Shippuuden Movie', 'MOVIE', 'Naruto Shippuden the Movie'),
+      syn(4437, 'NARUTO: Shippuuden - Kizuna', 'MOVIE', 'Naruto Shippuden the Movie: Bonds')
+    ]
+    assert.equal(pickFilmCandidate(c, 'Naruto Shippuden', 'Naruto'), null)
+  })
+
+  test('without a franchise only the exact rung runs', () => {
+    const c = [syn(2889, 'Bleach the Movie: The DiamondDust Rebellion', 'MOVIE', null)]
+    assert.equal(pickFilmCandidate(c, 'Bleach The DiamondDust Rebellion', 'Bleach').id, 2889)
+    assert.equal(pickFilmCandidate(c, 'Bleach The DiamondDust Rebellion'), null)
+  })
+
+  test('a series disambiguator in the franchise cannot block the match', () => {
+    const c = [syn(13271, 'HUNTER\u00d7HUNTER: Phantom Rouge', 'MOVIE', 'Hunter x Hunter: Phantom Rouge')]
+    assert.equal(pickFilmCandidate(c, 'Hunter x Hunter (2011) Phantom Rouge', 'Hunter x Hunter (2011)').id, 13271)
+  })
+})
+
+describe('filmSearchTerms', () => {
+  test('falls back to the bare row title', () => {
+    assert.deepEqual(
+      filmSearchTerms('Hunter x Hunter (2011)', 'Phantom Rouge'),
+      ['Hunter x Hunter (2011) Phantom Rouge', 'Phantom Rouge']
+    )
+  })
+
+  test('offers one term when the title already carries the franchise', () => {
+    assert.deepEqual(filmSearchTerms('One Piece', 'One Piece: The Movie'), ['One Piece: The Movie'])
   })
 })

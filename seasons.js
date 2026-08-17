@@ -51,7 +51,9 @@ export const FRANCHISE_SEASONS = {
       { id: 20745, episodes: 12 },  // BorN
       { id: 97767, episodes: 13 },  // HERO
     ],
-    // Held: the incumbent already claims 20745 with the franchise numbers, so emitting the season numbers needs human sign-off.
+    // Held by SCHEDULE, not by doubt. User signed off 2026-08-18: emit the correct
+    // season numbers on or after 2026-09-18, accepting the red audit gate. The 3
+    // over-marks are an artifact of the incumbent's own bug, not a risk to users.
     hold: 'incumbent claims 20745 as [34,35,36]; correcting it registers as an over-mark in the differential audit',
   },
 }

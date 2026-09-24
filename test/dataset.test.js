@@ -135,12 +135,18 @@ describe('parity against the incumbent dataset (release gate)', () => {
     384: 'no filler in that season (Gantz; eps 22-26 are on 395, GANTZ 2)',
     6033: 'boundaries unpinned (Dragon Ball Z Kai; 97+69 seasons vs 167 page rows)',
     14829: 'boundaries unpinned (Prisma Illya; 10+10+10+12 seasons vs 43 page rows)',
-    20745: 'held (High School DxD BorN; correct mapping is BorN 10-12, incumbent says 34-36)',
     20776: 'different id (Ghost in the Shell: Arise; we key 21056, the 10-episode entry the page matches)',
     20789: 'no filler in that season (Nanatsu no Taizai; eps 25-28 are on 21385, Seisen no Shirushi)',
     21459: 'no filler in that season (My Hero Academia; eps 39/58/64/104 are on 100166, 104276, 117193)',
     166456: 'no source row (Celestial Bonds)',
   }
+
+  // Where we are right and the incumbent is not, signed off by the user on 2026-08-18. Exact values
+  // only: any other marks on these ids, or a disagreement on any other id, still fails.
+  const SANCTIONED_CORRECTIONS = {
+    20745: { ours: [10, 11, 12], reason: 'High School DxD BorN: page eps 34-36 are BorN 10-12; the incumbent keys franchise numbers to a 12-episode entry' },
+  }
+  const sanctioned = k => k in SANCTIONED_CORRECTIONS && eq(norm(dataset[k]), SANCTIONED_CORRECTIONS[k].ours)
 
   test('covers every show the incumbent covers, bar the documented residue', { skip: !haveOracle }, () => {
     const missing = Object.keys(oracle).filter(k => !(k in dataset))
@@ -164,7 +170,7 @@ describe('parity against the incumbent dataset (release gate)', () => {
     // does not -- is a failure.
     const unexplained = []
     for (const k of Object.keys(oracle)) {
-      if (!(k in dataset)) continue
+      if (!(k in dataset) || sanctioned(k)) continue
       const a = norm(oracle[k])
       const b = norm(dataset[k])
       if (a.length === b.length && a.every((x, i) => x === b[i])) continue
@@ -247,7 +253,7 @@ describe('parity against the incumbent dataset (release gate)', () => {
     // silently drop real episodes. Under-marking is benign by comparison.
     const overMarks = []
     for (const k of Object.keys(oracle)) {
-      if (!(k in dataset)) continue
+      if (!(k in dataset) || sanctioned(k)) continue
       const a = new Set(norm(oracle[k]))
       for (const ep of norm(dataset[k])) {
         if (!a.has(ep)) overMarks.push(`${k}:${ep}`)

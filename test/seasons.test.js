@@ -72,8 +72,14 @@ describe('mapping', () => {
     assert.equal(mapFranchiseFiller('gantz', [22], 27), null)
   })
 
+  test('maps High School DxD 34-36 onto BorN as 10-12', () => {
+    const m = mapFranchiseFiller('high-school-dxd', [34, 35, 36], 49)
+    assert.deepEqual([...m], [[20745, [10, 11, 12]]])
+  })
+
   test('a held franchise maps to nothing', () => {
-    assert.equal(mapFranchiseFiller('high-school-dxd', [34, 35, 36], 49), null)
+    const held = { thing: { pageEpisodes: 26, seasons: [{ id: 1, episodes: 13 }, { id: 2, episodes: 13 }], hold: 'awaiting sign-off' } }
+    assert.equal(mapFranchiseFiller('thing', [1], 26, held), null)
   })
 
   test('a table whose seasons do not sum to the page length maps to nothing', () => {

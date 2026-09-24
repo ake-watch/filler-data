@@ -53,12 +53,14 @@ also only ever counts pure `filler` rows.
 
 ```bash
 node scrape.js
+node merge.js
 ```
 
-This performs a full scrape of every show on animefillerlist.com and
-overwrites `filler.json`. Pass `--limit N` to cap the number of shows
-processed (useful for local testing — do not run a full scrape while
-developing).
+`scrape.js` performs a full scrape of every show on animefillerlist.com and
+rewrites `filler.json` from scratch, so `merge.js` must follow it to fold the
+committed films pass (`films.json`) back in. Without it the 63 film ids are
+lost. Pass `--limit N` to `scrape.js` to cap the number of shows processed
+(useful for local testing; do not run a full scrape while developing).
 
 ### Crawl delay — read this before running anything
 
@@ -75,8 +77,9 @@ to force a clean re-scrape).
 ## Regeneration schedule
 
 `.github/workflows/update.yml` runs a full scrape weekly (this data changes
-slowly — new episodes air, but filler classifications are rarely revised) and
-commits `filler.json` only when it changes.
+slowly: new episodes air, but filler classifications are rarely revised),
+merges the films pass back in, runs the test suite, and commits `filler.json`
+only when it changes and the tests pass.
 
 ## License
 

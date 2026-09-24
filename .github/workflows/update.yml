@@ -29,6 +29,13 @@ jobs:
       - name: Full scrape (respects animefillerlist.com Crawl-delay: 10)
         run: node scrape.js
 
+      # scrape.js rewrites filler.json from scratch; without this every run drops the film ids.
+      - name: Merge the films pass back in
+        run: node merge.js
+
+      - name: Test the dataset before committing it
+        run: npm test
+
       - name: Commit filler.json if changed
         run: |
           if git diff --quiet -- filler.json; then

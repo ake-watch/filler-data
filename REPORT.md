@@ -1,4 +1,4 @@
-# Report — filler-data build
+# Report: filler-data build
 
 ## Status
 
@@ -19,7 +19,7 @@ created and nothing was pushed. ~/projects/ake was not touched.
 Git identity used: user.name = ake-app, user.email =
 312243255+ake-app@users.noreply.github.com (set before the first commit).
 
-## The mixed_canon/filler question — answered with evidence
+## The mixed_canon/filler question, answered with evidence
 
 **Only pure `filler` rows count as filler. `mixed_canon/filler` rows are
 excluded.**
@@ -37,7 +37,7 @@ Evidence, in order of strength:
    mixed_canon/filler combined" matched zero of the 11.
 2. **The 12th show is a negative-control confirmation.** Yu Yu Hakusho has 0
    pure-filler episodes but 4 mixed_canon/filler episodes. It has no
-   entry at all in the old dataset — consistent with the old dataset never
+   entry at all in the old dataset, consistent with the old dataset never
    counting mixed_canon/filler as filler (if it did, Yu Yu Hakusho would
    have a 4-episode entry).
 3. **The source site's own stated numbers agree.** animefillerlist.com's
@@ -61,9 +61,9 @@ way, which removes any tension.
 - Match rate: 11/11 (100%) of shows with an old-dataset entry matched
   exactly under the pure-filler-only interpretation. (The 12th, Yu Yu
   Hakusho, has no old-dataset entry to compare against, but its absence is
-  itself confirming evidence — see above.)
+  itself confirming evidence; see above.)
 - filler.json currently contains 11 entries, generated from this
-  validation subset only. This is explicitly not a full run — the
+  validation subset only. This is explicitly not a full run: the
   README and the commit message both flag it as partial. The scheduled
   GitHub Actions workflow (.github/workflows/update.yml, not yet run,
   since I did not push) is where the real ~356-show scrape happens.
@@ -89,10 +89,10 @@ The workflow sets timeout-minutes: 120 for headroom.
   field with a single Media query and no disambiguation beyond
   type: ANIME. For the 12 validated shows this resolved correctly every
   time, but at full scale (~356 shows) some titles will likely mismatch or
-  fail to resolve — sequels, OVAs, "Films"/"Specials" compilation entries,
+  fail to resolve: sequels, OVAs, "Films"/"Specials" compilation entries,
   and titles with unusual punctuation are the most likely failure modes
   (the show index itself has some data-entry quirks, e.g. "Attack on Titan
-  Films" links to a slug that looks unrelated to the title — worth
+  Films" links to a slug that looks unrelated to the title, worth
   spot-checking after the first full run).
 - The 15-show dev cap was respected (used 12), but that means ~344 shows
   are still statistically unvalidated. The pattern (pure-filler-only,
@@ -102,7 +102,7 @@ The workflow sets timeout-minutes: 120 for headroom.
 - scrape.js's AniList resolution has no manual override/alias table. Shows
   where automated title search fails are simply dropped from the output
   (logged as "no AniList match, skipping") rather than causing a build
-  failure. This favors availability over completeness — worth a follow-up
+  failure. This favors availability over completeness, worth a follow-up
   pass to add a small alias table for known-tricky titles once a full run
   surfaces them.
 - I did not create a GitHub repo or push, per the brief. The workflow file

@@ -76,10 +76,12 @@ to force a clean re-scrape).
 
 ## Regeneration schedule
 
-`.github/workflows/update.yml` runs a full scrape weekly (this data changes
-slowly: new episodes air, but filler classifications are rarely revised),
-merges the films pass back in, runs the test suite, and commits `filler.json`
-only when it changes and the tests pass.
+`.github/workflows/update.yml` runs a full scrape on demand (Actions, then
+"Run workflow"), merges the films pass back in, runs the test suite, and
+commits `filler.json` only when it changes and the tests pass. It has no
+schedule yet: on a fresh runner there is no `.cache/`, so the parity checks
+against the old dataset skip, and every change reaches Ake users directly.
+Review the first run's diff before turning a weekly schedule on.
 
 ## License
 

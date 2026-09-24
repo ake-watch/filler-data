@@ -1,11 +1,11 @@
 name: Update filler dataset
 
+# Manual until one supervised run has been reviewed: on a fresh runner there is no .cache/, so the parity checks against the old dataset skip.
 on:
-  schedule:
-    # Weekly. This data changes slowly (episode airs / classification edits),
-    # so a full ~1 hour scrape more often than this is not warranted.
-    - cron: '0 6 * * 1'
   workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 # Only one run at a time -- the scraper is a single-threaded, rate-limited
 # client against animefillerlist.com (Crawl-delay: 10) and must never race
